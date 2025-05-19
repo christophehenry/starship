@@ -17,9 +17,9 @@ pub struct TextSegment {
 
 impl TextSegment {
     // Returns the AnsiString of the segment value
-    fn ansi_string(&self, prev: Option<&AnsiStyle>) -> AnsiString {
+    fn ansi_string(&self, prev: Option<&AnsiStyle>, next: Option<&AnsiStyle>) -> AnsiString {
         match self.style {
-            Some(style) => style.to_ansi_style(prev).paint(&self.value),
+            Some(style) => style.to_ansi_style(prev, next).paint(&self.value),
             None => AnsiString::from(&self.value),
         }
     }
@@ -37,7 +37,7 @@ pub struct FillSegment {
 
 impl FillSegment {
     // Returns the AnsiString of the segment value, not including its prefix and suffix
-    pub fn ansi_string(&self, width: Option<usize>, prev: Option<&AnsiStyle>) -> AnsiString {
+    pub fn ansi_string(&self, width: Option<usize>, prev: Option<&AnsiStyle>, next: Option<&AnsiStyle>) -> AnsiString {
         let s = match width {
             Some(w) => self
                 .value
@@ -51,7 +51,7 @@ impl FillSegment {
             None => String::from(&self.value),
         };
         match self.style {
-            Some(style) => style.to_ansi_style(prev).paint(s),
+            Some(style) => style.to_ansi_style(prev, next).paint(s),
             None => AnsiString::from(s),
         }
     }
@@ -80,7 +80,7 @@ mod fill_seg_tests {
                 value: String::from(*text),
                 style: Some(style.into()),
             };
-            let actual = f.ansi_string(Some(width), None);
+            let actual = f.ansi_string(Some(width), None, None);
             assert_eq!(style.paint(*expected), actual);
         }
     }
@@ -126,8 +126,8 @@ impl Segment {
 
     pub fn style(&self) -> Option<AnsiStyle> {
         match self {
-            Self::Fill(fs) => fs.style.map(|cs| cs.to_ansi_style(None)),
-            Self::Text(ts) => ts.style.map(|cs| cs.to_ansi_style(None)),
+            Self::Fill(fs) => fs.style.map(|cs| cs.to_ansi_style(None, None)),
+            Self::Text(ts) => ts.style.map(|cs| cs.to_ansi_style(None, None)),
             Self::LineTerm => None,
         }
     }
@@ -157,10 +157,10 @@ impl Segment {
     }
 
     // Returns the AnsiString of the segment value, not including its prefix and suffix
-    pub fn ansi_string(&self, prev: Option<&AnsiStyle>) -> AnsiString {
+    pub fn ansi_string(&self, prev: Option<&AnsiStyle>, next: Option<&AnsiStyle>) -> AnsiString {
         match self {
-            Self::Fill(fs) => fs.ansi_string(None, prev),
-            Self::Text(ts) => ts.ansi_string(prev),
+            Self::Fill(fs) => fs.ansi_string(None, prev, next),
+            Self::Text(ts) => ts.ansi_string(prev, next),
             Self::LineTerm => AnsiString::from(LINE_TERMINATOR_STRING),
         }
     }

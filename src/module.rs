@@ -196,24 +196,32 @@ where
     let mut current: Vec<AnsiString> = Vec::new();
     let mut chunks: Vec<(Vec<AnsiString>, &FillSegment)> = Vec::new();
     let mut prev_style: Option<AnsiStyle> = None;
+    let next_segment = segments.next();
 
-    for segment in segments {
-        match segment {
+    while let (Some(curr_segment), next_segment) = (next_segment, segments.next())  {
+        let next_style = next_segment.and_then(|s| {
+            match s {
+                Segment::Fill(_) => None,
+                _ => Some(s.style()),
+            }
+        }).flatten();
+
+        match curr_segment {
             Segment::Fill(fs) => {
                 chunks.push((current, fs));
                 current = Vec::new();
                 prev_style = None;
             }
             _ => {
-                used += segment.width_graphemes();
-                let current_segment_string = segment.ansi_string(prev_style.as_ref());
+                used += curr_segment.width_graphemes();
+                let current_segment_string = curr_segment.ansi_string(prev_style.as_ref(), next_style.as_ref());
 
                 prev_style = Some(*current_segment_string.style_ref());
                 current.push(current_segment_string);
             }
         }
 
-        if matches!(segment, Segment::LineTerm) {
+        if matches!(curr_segment, Segment::LineTerm) {
             break;
         }
     }
@@ -230,6 +238,7 @@ where
                 let fill_string = fill.ansi_string(
                     fill_size,
                     strs.last().map(nu_ansi_term::AnsiGenericString::style_ref),
+                    None
                 );
                 strs.into_iter().chain(std::iter::once(fill_string))
             })
