@@ -9,18 +9,24 @@ use unicode_segmentation::UnicodeSegmentation;
 #[derive(Clone)]
 pub struct TextSegment {
     /// The segment's style. If None, will inherit the style of the module containing it.
-    style: Option<Style>,
+    pub(crate) style: Option<Style>,
 
     /// The string value of the current segment.
-    value: String,
+    pub(crate) value: String,
 }
 
 impl TextSegment {
     // Returns the AnsiString of the segment value
-    fn ansi_string(&self, prev: Option<&AnsiStyle>) -> AnsiString<'_> {
+    fn ansi_string<'a>(&self) -> AnsiString<'a> {
         match self.style {
-            Some(style) => style.to_ansi_style(prev).paint(&self.value),
-            None => AnsiString::from(&self.value),
+            Some(style) => style.to_ansi_style().paint(format!("{}", self.value)),
+            None => AnsiString::from(format!("{}", self.value)),
+        }
+    }
+    pub fn with_style(&self, previous: Option<&Style>, next: Option<&Style>) -> Self {
+        Self {
+            style: self.style.map(|s| s.resolve(previous, next)),
+            value: self.value.clone(),
         }
     }
 }
@@ -29,7 +35,7 @@ impl TextSegment {
 #[derive(Clone)]
 pub struct FillSegment {
     /// The segment's style. If None, will inherit the style of the module containing it.
-    style: Option<Style>,
+    pub(crate) style: Option<Style>,
 
     /// The string value of the current segment.
     value: String,
@@ -37,7 +43,10 @@ pub struct FillSegment {
 
 impl FillSegment {
     // Returns the AnsiString of the segment value, not including its prefix and suffix
-    pub fn ansi_string(&self, width: Option<usize>, prev: Option<&AnsiStyle>) -> AnsiString<'_> {
+    pub fn ansi_string<'a>(
+        &self,
+        width: Option<usize>,
+    ) -> AnsiString<'a> {
         let s = match width {
             Some(w) => self
                 .value
@@ -51,9 +60,21 @@ impl FillSegment {
             None => String::from(&self.value),
         };
         match self.style {
-            Some(style) => style.to_ansi_style(prev).paint(s),
+            Some(style) => style.to_ansi_style().paint(s),
             None => AnsiString::from(s),
         }
+    }
+
+    pub fn with_style(&self, previous: Option<&Style>, next: Option<&Style>) -> Self {
+        Self {
+            style: self.style.map(|s| s.resolve(previous, next)).clone(),
+            value: self.value.clone(),
+        }
+    }
+
+
+    pub fn ansi_string_with_style<'a>(&self, width: Option<usize>, previous: Option<&Style>, next: Option<&Style>) -> AnsiString<'a> {
+        self.with_style(previous, next).ansi_string(width)
     }
 }
 
@@ -80,7 +101,7 @@ mod fill_seg_tests {
                 value: String::from(*text),
                 style: Some(style.into()),
             };
-            let actual = f.ansi_string(Some(width), None);
+            let actual = f.ansi_string(Some(width));
             assert_eq!(style.paint(*expected), actual);
         }
     }
@@ -126,8 +147,16 @@ impl Segment {
 
     pub fn style(&self) -> Option<AnsiStyle> {
         match self {
-            Self::Fill(fs) => fs.style.map(|cs| cs.to_ansi_style(None)),
-            Self::Text(ts) => ts.style.map(|cs| cs.to_ansi_style(None)),
+            Self::Fill(fs) => fs.style.map(|cs| cs.to_ansi_style()),
+            Self::Text(ts) => ts.style.map(|cs| cs.to_ansi_style()),
+            Self::LineTerm => None,
+        }
+    }
+
+    pub fn segment_style(&self) -> Option<&Style> {
+        match self {
+            Self::Fill(fs) => fs.style.as_ref(),
+            Self::Text(ts) => ts.style.as_ref(),
             Self::LineTerm => None,
         }
     }
@@ -157,10 +186,10 @@ impl Segment {
     }
 
     // Returns the AnsiString of the segment value, not including its prefix and suffix
-    pub fn ansi_string(&self, prev: Option<&AnsiStyle>) -> AnsiString<'_> {
+    pub fn ansi_string<'a>(&self) -> AnsiString<'a> {
         match self {
-            Self::Fill(fs) => fs.ansi_string(None, prev),
-            Self::Text(ts) => ts.ansi_string(prev),
+            Self::Fill(fs) => fs.ansi_string(None),
+            Self::Text(ts) => ts.ansi_string(),
             Self::LineTerm => AnsiString::from(LINE_TERMINATOR_STRING),
         }
     }
@@ -172,7 +201,14 @@ impl Segment {
             Self::LineTerm => 0,
         }
     }
-}
 
+    pub fn with_style(&self, previous: Option<&Style>, next: Option<&Style>) -> Self {
+        match self {
+            Segment::Text(s) => Segment::Text(s.with_style(previous, next)),
+            Segment::Fill(s) => Segment::Fill(s.with_style(previous, next)),
+            Segment::LineTerm => Segment::LineTerm
+        }
+    }
+}
 const LINE_TERMINATOR: char = '\n';
 const LINE_TERMINATOR_STRING: &str = "\n";

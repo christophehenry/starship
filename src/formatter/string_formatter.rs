@@ -5,12 +5,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
-use crate::config::{Style, parse_style_string};
+use crate::config::{parse_style_string, Style};
 use crate::context::{Context, Shell};
 use crate::segment::Segment;
 
 use super::model::*;
-use super::parser::{Rule, parse};
+use super::parser::{parse, Rule};
 
 #[derive(Clone)]
 enum VariableValue<'a> {
@@ -27,9 +27,9 @@ impl Default for VariableValue<'_> {
 }
 
 type VariableMapType<'a> =
-    BTreeMap<String, Option<Result<VariableValue<'a>, StringFormatterError>>>;
+BTreeMap<String, Option<Result<VariableValue<'a>, StringFormatterError>>>;
 type StyleVariableMapType<'a> =
-    BTreeMap<String, Option<Result<Cow<'a, str>, StringFormatterError>>>;
+BTreeMap<String, Option<Result<Cow<'a, str>, StringFormatterError>>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StringFormatterError {
@@ -753,14 +753,27 @@ mod tests {
 
         assert_eq!(result.len(), 2);
 
-        // First segment: empty with bg:#9A348E
-        let first_ansi = result[0].ansi_string(None);
-        let prev_style = first_ansi.style_ref();
-
         // Second segment: should inherit bg from first
-        let second_ansi = result[1].ansi_string(Some(prev_style));
+        let second_ansi = result[1].ansi_string();
         assert_eq!(
             second_ansi.style_ref().background,
+            Some(nu_ansi_term::Color::Rgb(154, 52, 142))
+        );
+    }
+
+    #[test]
+    fn test_empty_textgroup_propagates_next_bg() {
+        const FORMAT_STR: &str = "[x](bg:next_bg)[X](bg:#9A348E)";
+
+        let formatter = StringFormatter::new(FORMAT_STR).unwrap();
+        let result = formatter.parse(None, None).unwrap();
+
+        assert_eq!(result.len(), 2);
+
+        // First segment: should inherit bg from second
+        let first_ansi = result[0].ansi_string();
+        assert_eq!(
+            first_ansi.style_ref().background,
             Some(nu_ansi_term::Color::Rgb(154, 52, 142))
         );
     }

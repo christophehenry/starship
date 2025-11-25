@@ -1,6 +1,7 @@
 use crate::segment;
 use crate::segment::{FillSegment, Segment};
-use nu_ansi_term::{AnsiString, AnsiStrings, Style as AnsiStyle};
+use nu_ansi_term::{AnsiString, AnsiStrings};
+use std::collections::VecDeque;
 use std::fmt;
 use std::time::Duration;
 
@@ -197,28 +198,24 @@ impl fmt::Display for Module<'_> {
     }
 }
 
-fn ansi_line<'a, I>(segments: &mut I, term_width: Option<usize>) -> Vec<AnsiString<'a>>
+fn ansi_line<'a, I>(segments: &mut I, term_width: Option<usize>) -> VecDeque<AnsiString<'a>>
 where
-    I: Iterator<Item = &'a Segment>,
+    I: Iterator<Item=&'a Segment> + Sized,
 {
     let mut used = 0usize;
-    let mut current: Vec<AnsiString> = Vec::new();
-    let mut chunks: Vec<(Vec<AnsiString>, &FillSegment)> = Vec::new();
-    let mut prev_style: Option<AnsiStyle> = None;
+    let mut current: Vec<Segment> = Vec::new();
+    let mut chunks: Vec<(Vec<Segment>, Option<&FillSegment>)> = Vec::new();
 
     for segment in segments {
         match segment {
             Segment::Fill(fs) => {
-                chunks.push((current, fs));
+                chunks.push((current, Some(fs)));
                 current = Vec::new();
-                prev_style = None;
             }
             _ => {
                 used += segment.width_graphemes();
-                let current_segment_string = segment.ansi_string(prev_style.as_ref());
-
-                prev_style = Some(*current_segment_string.style_ref());
-                current.push(current_segment_string);
+                let prev_style = current.last().and_then(|s| s.segment_style());
+                current.push(segment.with_style(prev_style, None));
             }
         }
 
@@ -227,24 +224,30 @@ where
         }
     }
 
-    if chunks.is_empty() {
-        current
-    } else {
-        let fill_size = term_width
-            .and_then(|tw| if tw > used { Some(tw - used) } else { None })
-            .map(|remaining| remaining / chunks.len());
-        chunks
-            .into_iter()
-            .flat_map(|(strs, fill)| {
-                let fill_string = fill.ansi_string(
-                    fill_size,
-                    strs.last().map(nu_ansi_term::AnsiGenericString::style_ref),
-                );
-                strs.into_iter().chain(std::iter::once(fill_string))
-            })
-            .chain(current)
-            .collect::<Vec<AnsiString>>()
+    if !current.is_empty() {
+        chunks.push((current, None));
     }
+
+    let fill_size = term_width
+        .and_then(|tw| if tw > used { Some(tw - used) } else { None })
+        .map(|remaining| remaining / chunks.len());
+
+
+    let mut result = VecDeque::<AnsiString<'a>>::new();
+    for (strs, fill) in chunks {
+        if let Some(segment) = fill {
+            result.push_front(segment.ansi_string_with_style(fill_size, None, strs.last().and_then(move |t| t.segment_style())));
+        }
+
+        let mut next_segments: Vec<Segment> = Vec::new();
+        for segment in strs.iter().rev() {
+            next_segments.push(segment.with_style(None, next_segments.last().and_then(|s| s.segment_style())));
+            if let Some(s) = next_segments.last() {
+                result.push_back(s.ansi_string())
+            }
+        }
+    }
+    result
 }
 
 #[cfg(test)]
