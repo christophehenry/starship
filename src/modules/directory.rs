@@ -5,6 +5,7 @@ use super::utils::directory_win as directory_utils;
 use super::utils::path::PathExt as SPathExt;
 use indexmap::IndexMap;
 use path_slash::{PathBufExt, PathExt};
+use regex::Regex;
 use std::borrow::Cow;
 use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
@@ -292,9 +293,21 @@ fn real_path<P: AsRef<Path>>(path: P) -> PathBuf {
 /// Given a list of (from, to) pairs, this will perform the string
 /// substitutions, in order, on the path. Any non-pair of strings is ignored.
 fn substitute_path(dir_string: String, substitutions: &IndexMap<String, &str>) -> String {
+    let root_regex = Regex::new(r"^/").unwrap();
+    let root_regex_final = Regex::new(r"^root/?").unwrap();
     let mut substituted_dir = dir_string;
     for substitution_pair in substitutions {
+        if substitution_pair.0 == "/" {
+            substituted_dir = root_regex
+                .replace(substituted_dir.as_str(), "root/")
+                .to_string();
+        }
         substituted_dir = substituted_dir.replace(substitution_pair.0, substitution_pair.1);
+        if substitution_pair.0 == "/" {
+            substituted_dir = root_regex_final
+                .replace(substituted_dir.as_str(), "/")
+                .to_string();
+        }
     }
     substituted_dir
 }
@@ -686,6 +699,45 @@ mod tests {
             Color::Cyan
                 .bold()
                 .paint(convert_path_sep(&format!("/foo/bar/{strange_sub}/path")))
+        ));
+
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn unix_directory_separator_substitution() {
+        let actual = ModuleRenderer::new("directory")
+            .path("/var/log")
+            .config(toml::toml! {
+                [directory]
+                format = "[$path]($style)"
+                [directory.substitutions]
+                "~/Documents" = "docs"
+                "/" = " | "
+            })
+            .collect();
+        let expected = Some(format!(
+            "{}",
+            Color::Cyan.bold().paint(convert_path_sep("/ | var | log"))
+        ));
+
+        assert_eq!(expected, actual);
+
+        let actual = ModuleRenderer::new("directory")
+            .path("~/Documents/var/log")
+            .config(toml::toml! {
+                [directory]
+                format = "[$path]($style)"
+                [directory.substitutions]
+                "~/Documents" = "docs"
+                "/" = " | "
+            })
+            .collect();
+        let expected = Some(format!(
+            "{}",
+            Color::Cyan
+                .bold()
+                .paint(convert_path_sep("docs | var | log"))
         ));
 
         assert_eq!(expected, actual);
